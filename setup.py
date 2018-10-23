@@ -3,7 +3,7 @@ with open("README.md", "r") as fh:
       long_description = fh.read()
 setup(name='goprocam',
       version='2.0.10',
-      description='GoPro WiFi API Wrapper for Python - Compatible with HERO3, HERO3+, HERO4, HERO5, HERO+, HERO6',
+      description='GoPro WiFi API Wrapper for Python with asyncio',
       url='http://github.com/kmpm/py-asyncio-goproapi',
       long_description=long_description,
       long_description_content_type="text/markdown",

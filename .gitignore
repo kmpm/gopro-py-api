@@ -15,3 +15,10 @@ venv/
 #testing stuff
 .tox
 .coverage
+
+
+#media
+
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[jJ][pP][gG]

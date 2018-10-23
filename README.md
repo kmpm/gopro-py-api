@@ -1,6 +1,6 @@
 # GoPro API for Python using asyncio and aiohttp
 Started of as a fork of https://github.com/KonradIT/gopro-py-api and
-who knows, it might be merged in.
+who knows, it might be merged back in there.
 
 __Warning__ This is very much a work in progress.
 
@@ -9,17 +9,24 @@ __Warning__ This is very much a work in progress.
 Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 ![](http://i.imgur.com/kA0Rf1b.png)
 
+# Major changes from gopro-py-api
+* asyncio and aiohttp instead of urllib
+* no prints
+* flake8
+
 
 # Compatibility:
+| Camera                          | gopro-py-api | this library        |
+| ------------------------------- | ------------ | ------------------- |
+| HERO3                           | Yes          | not tested          |
+| HERO3+                          | Yes          | not tested          |
+| HERO4 (including HERO Session)  | Yes          | Yes                 |
+| HERO+                           | Yes          | not tested          |
+| HERO5 (including HERO5 Session) | Yes          | not tested          |
+| HERO6                           | Yes          | not tested          |
+| Fusion 1                        | Yes          | not tested          |
+| HERO7 (Black)                   | Yes          | not tested          |
 
-- HERO3
-- HERO3+
-- HERO4 (including HERO Session)
-- HERO+
-- HERO5 (including HERO5 Session)
-- HERO6 
-- Fusion 1
-- HERO7 (Black)
 
 # Installation
 
