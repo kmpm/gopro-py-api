@@ -13,13 +13,14 @@ Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 * asyncio and aiohttp instead of urllib
 * no prints
 * flake8
+* will be dropping HERO3, HERO3+ support
 
 
 # Compatibility:
 | Camera                          | gopro-py-api | this library        |
 | ------------------------------- | ------------ | ------------------- |
-| HERO3                           | Yes          | not tested          |
-| HERO3+                          | Yes          | not tested          |
+| HERO3                           | Yes          | No                  |
+| HERO3+                          | Yes          | No                  |
 | HERO4 (including HERO Session)  | Yes          | Yes                 |
 | HERO+                           | Yes          | not tested          |
 | HERO5 (including HERO5 Session) | Yes          | not tested          |
