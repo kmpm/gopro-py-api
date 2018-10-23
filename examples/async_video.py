@@ -1,5 +1,4 @@
-from goprocam import GoProCamera
-from goprocam import constants
+from goprocam import GoProCamera, constants
 import asyncio
 
 gpCam = GoProCamera.GoPro()

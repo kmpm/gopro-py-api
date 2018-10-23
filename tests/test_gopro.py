@@ -53,3 +53,7 @@ class TestGoPro(unittest.TestCase):
             self.assertRegex(media, r'^http://10\.5\.5\.9:8080/videos/DCIM/100GOPRO/GOPR[0-9].*\.MP4')
 
         _run(work(self.gpCam))
+
+
+if __name__ == '__main__':
+    unittest.main()

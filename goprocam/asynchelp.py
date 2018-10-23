@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import os
 import posixpath
+from os import path
 try:
     from urlparse import urlsplit
     from urllib import unquote
@@ -25,11 +26,12 @@ class GoProError(HttpError):
         self.message = "GoPro Error"
 
 
-class UrlHelper:
-    def __init__(self, **kwargs):
+class AsyncClient:
+    def __init__(self, working_path=None, **kwargs):
         self._session = None
         self.download_semaphore = asyncio.Semaphore(kwargs.pop('download_semaphore', 4))
         self.chunk_size = kwargs.pop('chunk_size', 64 * 1024)
+        self.working_path = working_path
 
     def session(self):
         if not self._session:
@@ -57,6 +59,9 @@ class UrlHelper:
         async with self.download_semaphore:
             if not filename:
                 filename = url2filename(url)
+
+            if self.working_path:
+                filename = path.join(self.working_path, filename)
 
             async with self.session().get(url) as resp:
                 with open(filename, 'wb') as fd:
