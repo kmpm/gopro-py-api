@@ -4,7 +4,7 @@ who knows, it might be merged in.
 
 __Warning__ This is very much a work in progress.
 
-[![GitHub issues](https://img.shields.io/github/issues/kmpm/gopro-py-asyncio-api.svg)]
+[![GitHub issues](https://img.shields.io/github/issues/kmpm/py-asyncio-goproapi.svg)]
 
 Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 ![](http://i.imgur.com/kA0Rf1b.png)
@@ -23,12 +23,11 @@ Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 
 ### Installation
 
-
 Git (unstable):
 
 ```bash
-git clone http://github.com/kmpm/py-asyncio-goprocam
-cd gopro-py-api
+git clone http://github.com/kmpm/py-asyncio-goproapi
+cd py-asyncio-goproapi
 python setup.py install
 ```
 
