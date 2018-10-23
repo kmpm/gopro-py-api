@@ -17,53 +17,61 @@ import sys
 import ssl
 
 
+import asyncio
+from goprocam.asynchelp import UrlHelper
+
+class CameraInfo:
+	firmware_version = None
+	apitype = None
+	
+	def __init__(self, model, apitype='gpcontrol', **kwargs):
+		self.model = model
+		self.apitype = apitype
+		for key, value in kwargs.items():
+			setattr(self, key, value)
+	
+	def __str__(self):
+		msg = "{0}".format(self.model)
+		if self.apitype:
+			msg += ", api:{0}".format(self.apitype)
+		if self.firmware_version:
+			msg += ", fw:{0}".format(self.firmware_version)
+		return msg
+
+
 class GoPro:
-	def prepare_gpcontrol(self):
+	async def prepare_gpcontrol(self):
 		try:
-			response_raw = urllib.request.urlopen('http://' + self.ip_addr + '/gp/gpControl', timeout=5).read().decode('utf8')
-			jsondata=json.loads(response_raw)
+			jsondata = await self._client.getJSON('http://' + self.ip_addr + '/gp/gpControl', timeout=5)
 			response=jsondata["info"]["firmware_version"]
 			if "HX" in response: #Only session cameras.
 				connectedStatus=False
 				while connectedStatus == False:
-					req=urllib.request.urlopen("http://" + self.ip_addr + "/gp/gpControl/status")
-					data = req.read()
-					encoding = req.info().get_content_charset('utf-8')
-					json_data = json.loads(data.decode(encoding))
+					json_data= await self._client.getJSON("http://" + self.ip_addr + "/gp/gpControl/status")
 					#print(json_data["status"]["31"])
 					if json_data["status"]["31"] >= 1:
 						connectedStatus=True
 		except (HTTPError, URLError) as error:
-			self.prepare_gpcontrol()
+			await self.prepare_gpcontrol()
 		except timeout:
-			self.prepare_gpcontrol()
+			await self.prepare_gpcontrol()
 		
-		print("Camera successfully connected!")
-	def __init__(self, camera="detect", ip_address="10.5.5.9", mac_address="AA:BB:CC:DD:EE:FF"):
+		# print("Camera successfully connected!")
+
+	def __init__(self, ip_address="10.5.5.9", mac_address="AA:BB:CC:DD:EE:FF"):
 		if sys.version_info[0] < 3:
-			print("Needs Python v3, run again on a virtualenv or install Python 3")
-			exit()
+			raise Exception("Needs Python v3, run again on a virtualenv or install Python 3")
 		self.ip_addr = ip_address
 		self._camera=""
+		self._connect_handler = None  # type: Optional[Callable]
+		self._control_set_handler = None
+		self._control_command_handler = None
+		self._client = UrlHelper()
 		try:
 			from getmac import get_mac_address
 			self._mac_address = get_mac_address(ip="10.5.5.9")
 		except ImportError:
 			self._mac_address=mac_address
-		if camera == "detect":
-			self._camera = self.whichCam()
-		elif camera == "startpair":
-			self.pair()
-		else:
-			if camera == "auth" or camera == "HERO3" or camera == "HERO3+" or camera == "HERO2":
-				self.power_on_auth()
-				time.sleep(2)
-				self._camera="auth"
-			else:
-				self._camera="gpcontrol"
-				self.power_on(self._mac_address)
-				self.prepare_gpcontrol()
-			print("Connected to " + self.ip_addr)
 	def __str__(self):
 		return str(self.infoCamera())
 	def KeepAlive(self):
@@ -83,10 +91,12 @@ class GoPro:
 		except timeout:
 			return ""
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-	def gpControlSet(self, param,value):
+	async def gpControlSet(self, param,value):
 		#sends Parameter and value to gpControl/setting
 		try:
-			return urllib.request.urlopen('http://' + self.ip_addr + '/gp/gpControl/setting/' + param + '/' + value, timeout=5).read().decode('utf-8')
+			resp = await self._client.getText('http://' + self.ip_addr + '/gp/gpControl/setting/' + param + '/' + value, timeout=5)
+			self._handle_control_set(param, value, resp)
+			return resp
 		except (HTTPError, URLError) as error:
 			return ""
 			print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
@@ -94,9 +104,11 @@ class GoPro:
 			return ""
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
 	
-	def gpControlCommand(self, param):
+	async def gpControlCommand(self, param):
 		try:
-			return urllib.request.urlopen('http://' + self.ip_addr + '/gp/gpControl/command/' + param, timeout=5).read().decode('utf-8')
+			resp = await self._client.getText('http://' + self.ip_addr + '/gp/gpControl/command/' + param, timeout=5)
+			self._handle_control_command(param, resp)
+			return resp
 		except (HTTPError, URLError) as error:
 			return ""
 			print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
@@ -112,29 +124,29 @@ class GoPro:
 		except timeout:
 			return ""
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-	def sendCamera(self, param,value=""):
+	async def sendCamera(self, param,value=""):
 		value_notempty = ""
 		if not value == "":
 			value_notempty=str('&p=%' + value)
 		#sends parameter and value to /camera/
 		try:
-			urllib.request.urlopen('http://' + self.ip_addr + '/camera/' + param + '?t=' + self.getPassword() + value_notempty, timeout=5).read()
+			return await self._client.getText('http://' + self.ip_addr + '/camera/' + param + '?t=' + self.getPassword() + value_notempty, timeout=5)
 		except (HTTPError, URLError) as error:
 			print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
 		except timeout:
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")	
-	def sendBacpac(self, param,value):
+	async def sendBacpac(self, param,value):
 		#sends parameter and value to /bacpac/
 		value_notempty = ""
 		if value:
 			value_notempty=str('&p=%' + value)
 		try:
-			urllib.request.urlopen('http://' + self.ip_addr + '/bacpac/' + param + '?t=' + self.getPassword() + value_notempty, timeout=5).read()
+			self._client.getText('http://' + self.ip_addr + '/bacpac/' + param + '?t=' + self.getPassword() + value_notempty, timeout=5)
 		except (HTTPError, URLError) as error:
 			print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
 		except timeout:
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-	def whichCam(self):
+	async def whichCam(self):
 		# This returns what type of camera is currently connected.
 		# gpcontrol: HERO4 Black and Silver, HERO5 Black and Session, HERO Session (formally known as HERO4 Session), HERO+ LCD, HERO+.
 		# auth: HERO2 with WiFi BacPac, HERO3 Black/Silver/White, HERO3+ Black and Silver.
@@ -142,8 +154,7 @@ class GoPro:
 			return self._camera
 		else:
 			try:
-				response_raw = urllib.request.urlopen('http://' + self.ip_addr + '/gp/gpControl', timeout=5).read().decode('utf8')
-				jsondata=json.loads(response_raw)
+				jsondata = await self._client.getJSON('http://' + self.ip_addr + '/gp/gpControl', timeout=5)
 				response=jsondata["info"]["firmware_version"]
 				response_parsed=3
 				exception_found = False
@@ -155,8 +166,9 @@ class GoPro:
 						exception_found = True
 						break
 				if int(response_parsed) > 3 or exception_found: #HD4 (Hero4), HD5 (Hero5), HD6 (Hero6)... Exceptions: HX (HeroSession), FS (Fusion), HD3.02 (Hero+), H18 (Hero 2018)
-					print(jsondata["info"]["model_name"] + "\n" + jsondata["info"]["firmware_version"])
-					self.prepare_gpcontrol()
+					# print(jsondata["info"]["model_name"] + "\n" + jsondata["info"]["firmware_version"])
+					await self.prepare_gpcontrol()
+					self.camera = CameraInfo(jsondata["info"]["model_name"], firmware_version=jsondata["info"]["firmware_version"])
 					self._camera="gpcontrol"
 				else:
 					response = urllib.request.urlopen('http://' + self.ip_addr + '/camera/cv',timeout=5).read()
@@ -176,7 +188,7 @@ class GoPro:
 					self.power_on(self._mac_address)
 					time.sleep(5)
 			except timeout:
-				self.power_on(self.mac_address)
+				self.power_on(self._mac_address)
 				time.sleep(5)
 				response = urllib.request.urlopen('http://' + self.ip_addr + '/camera/cv',timeout=5).read()
 				if b"Hero3" in response:
@@ -192,16 +204,15 @@ class GoPro:
 				if b"Hero3" in response:
 					print("HERO3/3+")
 				self._camera="auth"
+			except:
+				raise
 			return self._camera
 	
 	
-	def getStatus(self, param, value=""):
-		if self.whichCam() == "gpcontrol":
+	async def getStatus(self, param, value=""):
+		if (await self.whichCam()) == "gpcontrol":
 			try:
-				req=urllib.request.urlopen("http://" + self.ip_addr + "/gp/gpControl/status", timeout=5)
-				data = req.read()
-				encoding = req.info().get_content_charset('utf-8')
-				json_data = json.loads(data.decode(encoding))
+				json_data = await self._client.getJSON("http://" + self.ip_addr + "/gp/gpControl/status", timeout=5)
 				return json_data[param][value]
 			except (HTTPError, URLError) as error:
 				return ""
@@ -210,7 +221,7 @@ class GoPro:
 				return ""
 				print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
 		else:
-			response = urllib.request.urlopen("http://" + self.ip_addr + "/camera/sx?t=" + self.getPassword(), timeout=5).read()
+			response = await self._client.getText("http://" + self.ip_addr + "/camera/sx?t=" + self.getPassword(), timeout=5)
 			response_hex = str(bytes.decode(base64.b16encode(response), 'utf-8'))
 			return str(response_hex[param[0]:param[1]])
 
@@ -240,14 +251,11 @@ class GoPro:
 			self.gpControlCommand("wireless/ap/ssid?ssid=" + ssid + "&pw=" + password)
 			print("Disconnecting")
 			exit()
-	def infoCamera(self, option=""):
-		if self.whichCam() == "gpcontrol":
-			try:
-				info=urllib.request.urlopen('http://' + self.ip_addr + '/gp/gpControl', timeout=5)
-				data = info.read()
-				encoding = info.info().get_content_charset('utf-8')
 
-				parse_read = json.loads(data.decode(encoding))
+	async def infoCamera(self, option=""):	
+		if (await self.whichCam()) == "gpcontrol":
+			try:
+				parse_read = await self._client.getJSON('http://' + self.ip_addr + '/gp/gpControl', timeout=5)
 				parsed_info = ""
 				if option == "":
 					parsed_info = parse_read["info"]
@@ -260,11 +268,10 @@ class GoPro:
 			except timeout:
 				return ""
 				print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-		elif self.whichCam() == "auth":
+		elif (await self.whichCam()) == "auth":
 			if option == "model_name" or option == "firmware_version":
 				try:
-					info=urllib.request.urlopen('http://' + self.ip_addr + '/camera/cv', timeout=5)
-					data = info.read()
+					data = await self._client.getText('http://' + self.ip_addr + '/camera/cv', timeout=5)
 					parsed=re.sub(r'\W+', '', str(data))
 					print(parsed)
 					return parsed #an error is raised in take_photo if no value is returned
@@ -276,8 +283,7 @@ class GoPro:
 					print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
 			if option == "ssid":
 				try:
-					info=urllib.request.urlopen('http://' + self.ip_addr + '/bacpac/cv', timeout=5)
-					data = info.read()
+					data = await self._client.getText('http://' + self.ip_addr + '/bacpac/cv', timeout=5)
 					parsed=re.sub(r'\W+', '', str(data))
 					print(parsed)
 					return parsed #an error is raised in take_photo if no value is returned
@@ -290,13 +296,13 @@ class GoPro:
 		else:
 			print("Error, camera not defined.")
 	
-	def shutter(self,param):
-		if self.whichCam() == "gpcontrol":
-			print(self.gpControlCommand("shutter?p=" + param))
+	async def shutter(self,param):
+		if (await self.whichCam()) == "gpcontrol":
+			return await self.gpControlCommand("shutter?p=" + param)
 		else:
 			if len(param) == 1:
 				param = "0" + param
-			self.sendBacpac("SH",param)
+			return await self.sendBacpac("SH",param)
 	
 	
 	def mode(self, mode, submode="0"):
@@ -397,16 +403,17 @@ class GoPro:
 			print("Connect now!")
 	def power_on_auth(self):
 		print(self.sendBacpac("PW","01"))
-	def video_settings(self, res, fps="none"):
-		if self.whichCam() == "gpcontrol":
+	async def video_settings(self, res, fps="none"):
+		cam = await self.whichCam()
+		if cam == "gpcontrol":
 			x="constants.Video.Resolution.R" + res
-			videoRes = eval(x)
-			print(self.gpControlSet(constants.Video.RESOLUTION,videoRes))
+			videoRes = eval(x, {}, {"constants": constants})
+			resp1 = await self.gpControlSet(constants.Video.RESOLUTION,videoRes)
 			if fps != "none":
 				x="constants.Video.FrameRate.FR" + fps
-				videoFps = eval(x)
-				print(self.gpControlSet(constants.Video.FRAME_RATE,videoFps))
-		elif self.whichCam() == "auth":
+				videoFps = eval(x, {}, {"constants": constants})
+				resp2 = await self.gpControlSet(constants.Video.FRAME_RATE,videoFps)
+		elif cam == "auth":
 			if res == "4k":
 				print(self.sendCamera(constants.Hero3Commands.VIDEO_RESOLUTION,"06"))
 			elif res == "4K_Widescreen":
@@ -467,7 +474,7 @@ class GoPro:
 						ready=str(self.getStatus(constants.Hero3Status.IsRecording))
 				return self.getMedia()
 
-	def syncTime(self):
+	async def syncTime(self):
 		now = datetime.datetime.now()
 		year=str(now.year)[-2:]
 		datestr_year=format(int(year), 'x')
@@ -477,24 +484,30 @@ class GoPro:
 		datestr_min=format(now.minute, 'x')
 		datestr_sec=format(now.second, 'x')
 		datestr=str("%" + str(datestr_year)+"%"+str(datestr_month)+"%"+str(datestr_day)+"%"+str(datestr_hour)+"%"+str(datestr_min)+"%"+str(datestr_sec))
-		if self.whichCam() == "gpcontrol":
-			print(self.gpControlCommand('setup/date_time?p=' + datestr))
+		cam = await self.whichCam()
+		if cam == "gpcontrol":
+			res = await self.gpControlCommand('setup/date_time?p=' + datestr)
 		else:
-			print(self.sendCamera("TM",datestr))
-	def reset(self, r):
-		self.gpControlCommand(r + "/protune/reset")
-	def setZoom(self, zoomLevel):
+			res = await self.sendCamera("TM",datestr)
+		return res
+	
+	async def reset(self, r):
+		return await self.gpControlCommand(r + "/protune/reset")
+	
+	async def setZoom(self, zoomLevel):
 		if zoomLevel >= 0 and zoomLevel <= 100:
-			self.gpControlCommand("digital_zoom?range_pcnt=" + zoomLevel)
-	def getMedia(self):
-		if "FS" in self.infoCamera(constants.Camera.Firmware):
-			self.getMediaFusion()
+			await self.gpControlCommand("digital_zoom?range_pcnt=" + zoomLevel)
+	
+	async def getMedia(self):
+		"""Return url for media
+		"""
+		if "FS" in (await self.infoCamera(constants.Camera.Firmware)):
+			await self.getMediaFusion()
 		else:
 			folder = ""
 			file_lo = ""
 			try:
-				raw_data = urllib.request.urlopen('http://' + self.ip_addr + ':8080/gp/gpMediaList').read().decode('utf-8')
-				json_parse = json.loads(raw_data)
+				json_parse = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList')
 				for i in json_parse['media']:
 					folder=i['d']
 				for i in json_parse['media']:
@@ -507,6 +520,7 @@ class GoPro:
 			except timeout:
 				return ""
 				print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
+	
 	def getMediaFusion(self):
 		folder_1=""
 		folder_2=""
@@ -537,14 +551,15 @@ class GoPro:
 		except timeout:
 			return ""
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-	def getMediaInfo(self, option):
+	
+	async def getMediaInfo(self, option):
 		folder = ""
 		file = ""
 		size = ""
 		try:
-			raw_data = urllib.request.urlopen('http://' + self.ip_addr + ':8080/gp/gpMediaList').read().decode('utf-8')
-			json_parse = json.loads(raw_data)
-			if "FS" in self.infoCamera(constants.Camera.Firmware):
+			json_parse = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList')
+			
+			if "FS" in (await self.infoCamera(constants.Camera.Firmware)):
 				json_parse=json_parse[0]
 			for i in json_parse['media']:
 				folder=i['d']
@@ -564,6 +579,7 @@ class GoPro:
 		except timeout:
 			return ""
 			print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
+	
 	def listMedia(self, format=False, media_array=False):
 		try:
 			if format == False:
@@ -604,14 +620,15 @@ class GoPro:
 	## 
 	## Misc media utils
 	##
-	def IsRecording(self):
-		if self.whichCam() == "gpcontrol":
-			return self.getStatus(constants.Status.Status, constants.Status.STATUS.IsRecording)
-		elif self.whichCam() == "auth":
-			if self.getStatus(constants.Hero3Status.IsRecording) == '00':
+	async def IsRecording(self):
+		if (await self.whichCam()) == "gpcontrol":
+			return (await self.getStatus(constants.Status.Status, constants.Status.STATUS.IsRecording))
+		elif (await self.whichCam()) == "auth":
+			if (await self.getStatus(constants.Hero3Status.IsRecording)) == '00':
  				return 0
 			else:
 				return 1
+
 	def getInfoFromURL(self, url):
 		media=[]
 		media.append(url.replace('http://' + self.ip_addr + ':8080/videos/DCIM/','').replace('/','-').rsplit('-', 1)[0])
@@ -657,17 +674,24 @@ class GoPro:
 			for i in range(int(high_bound) - int(lower_bound)+1):
 				f = filename[:4] + str(int(lower_bound) + i) + ".JPG"
 				self.downloadMedia(folder, f)
-	def downloadLastMedia(self, path="", custom_filename=""):
-		if self.IsRecording() == 0:
+	
+	async def downloadLastMedia(self, path="", custom_filename=""):
+		if (await self.IsRecording()) == 0:
 			if path == "":
-				print("filename: " + self.getMediaInfo("file") + "\nsize: " + self.getMediaInfo("size"))
+				fileInfo, sizeInfo = await asyncio.gather(self.getMediaInfo("file"), self.getMediaInfo("size"))
+				print("filename: " + fileInfo + "\nsize: " + sizeInfo)
 				if custom_filename == "":
-					custom_filename = self.getMediaInfo("folder")+"-"+self.getMediaInfo("file")
-				if "FS" in self.infoCamera(constants.Camera.Firmware):
-					urllib.request.urlretrieve(self.getMedia()[0].replace("JPG","GPR"), "100GBACK-"+self.getMediaInfo("file"))
-					urllib.request.urlretrieve(self.getMedia()[1].replace("JPG","GPR"), "100GFRNT-"+self.getMediaInfo("file"))
+					folderInfo = await self.getMediaInfo("folder")
+					custom_filename = "{0}-{1}".format(folderInfo, fileInfo)
+				
+				media = await self.getMedia()
+				if "FS" in (await self.infoCamera(constants.Camera.Firmware)):
+					await asyncio.gather(
+						self._client.download(media[0].replace("JPG","GPR"), "100GBACK-{0}".format(fileInfo)),
+						self._client.download(media[1].replace("JPG","GPR"),  "100GFRNT-{0}".format(fileInfo))
+					)
 				else:
-					urllib.request.urlretrieve(self.getMedia(), custom_filename)
+					await self._client.download(media, custom_filename)
 			else:
 				print("filename: " + self.getInfoFromURL(path)[1])
 				filename = ""
@@ -675,9 +699,10 @@ class GoPro:
 					filename = self.getInfoFromURL(path)[0]+"-"+self.getInfoFromURL(path)[1]
 				else:
 					filename = custom_filename
-				urllib.request.urlretrieve(path, filename)
+				await self._client.download(path, filename)
 		else:
 			print("Not supported while recording or processing media.")
+	
 	def downloadMedia(self, folder, file, custom_filename=""):
 		if self.IsRecording() == 0:
 			print("filename: " + file)
@@ -1156,3 +1181,54 @@ class GoPro:
 			print("current video Fov: " + self.parse_value(constants.Hero3Status.FOV,self.getStatus(constants.Hero3Status.FOV)))
 			print("status lights: " + self.parse_value(constants.Hero3Status.LED,self.getStatus(constants.Hero3Status.LED)))
 			print("recording: " + self.parse_value(constants.Hero3Status.IsRecording,self.getStatus(constants.Hero3Status.IsRecording)))
+	
+	async def connect(self, camera='detect'):
+		await self._client.setup()
+		if camera == "detect":
+			self._camera = await self.whichCam()
+			self._handle_connect(self.camera or self._camera)
+		elif camera == "startpair":
+			self.pair()
+		else:
+			if camera == "auth" or camera == "HERO3" or camera == "HERO3+" or camera == "HERO2":
+				self.power_on_auth()
+				time.sleep(2)
+				self._camera="auth"
+			else:
+				self._camera="gpcontrol"
+				self.power_on(self._mac_address)
+				self.prepare_gpcontrol()
+			print("Connected to " + self.ip_addr)
+
+	async def quit(self):
+		await self._client.quit()
+
+	def on_connect(self):
+		def decorator(handler):
+			self._connect_handler = handler
+			return handler
+		return decorator
+	
+	def _handle_connect(self, camera):
+		if self._connect_handler is not None:
+			self._connect_handler(camera)
+	
+	def on_control_set(self):
+		def decorator(handler):
+			self._control_set_handler = handler
+			return handler
+		return decorator
+	
+	def _handle_control_set(self, param, value, resp):
+		if self._control_set_handler is not None:
+			self._control_set_handler(param, value, resp)
+
+	def on_control_command(self):
+		def decorator(handler):
+			self._control_command_handler = handler
+			return handler
+		return decorator
+	
+	def _handle_control_command(self, param, resp):
+		if self._control_command_handler is not None:
+			self._control_command_handler(param, resp)

@@ -10,7 +10,7 @@ Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 ![](http://i.imgur.com/kA0Rf1b.png)
 
 
-### Compatibility:
+# Compatibility:
 
 - HERO3
 - HERO3+
@@ -21,7 +21,7 @@ Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 - Fusion 1
 - HERO7 (Black)
 
-### Installation
+# Installation
 
 Git (unstable):
 
@@ -31,4 +31,21 @@ cd py-asyncio-goproapi
 python setup.py install
 ```
 
-**Tested on Python 3.5.4** -- **should work on Linux and Windows and Mac**
+Tested on Python 3.5.4 -- **should** work on Linux and Windows and Mac
+
+
+# Testing
+Testing is simplest done using tox
+```bash
+git clone http://github.com/kmpm/py-asyncio-goproapi
+cd py-asyncio-goproapi
+
+#optional virtualenv
+python3 -m venv venv
+source venv/bin/activate
+
+#install tox
+pip install tox
+
+tox
+```
