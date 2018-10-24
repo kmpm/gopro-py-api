@@ -17,16 +17,16 @@ Unofficial GoPro API Library for Python - connect to GoPro cameras via WiFi.
 
 
 # Compatibility:
-| Camera                          | gopro-py-api | this library        |
-| ------------------------------- | ------------ | ------------------- |
-| HERO3                           | Yes          | No                  |
-| HERO3+                          | Yes          | No                  |
-| HERO4 (including HERO Session)  | Yes          | Yes                 |
-| HERO+                           | Yes          | not tested          |
-| HERO5 (including HERO5 Session) | Yes          | not tested          |
-| HERO6                           | Yes          | not tested          |
-| Fusion 1                        | Yes          | not tested          |
-| HERO7 (Black)                   | Yes          | not tested          |
+| Camera                          | gopro-py-api | this library             |
+| ------------------------------- | ------------ | ------------------------ |
+| HERO3                           | Yes          | No                       |
+| HERO3+                          | Yes          | No                       |
+| HERO4 (including HERO Session)  | Yes          | Yes (Session not tested) |
+| HERO+                           | Yes          | not tested               |
+| HERO5 (including HERO5 Session) | Yes          | not tested               |
+| HERO6                           | Yes          | not tested               |
+| Fusion 1                        | Yes          | not tested               |
+| HERO7 (Black)                   | Yes          | Yes                      |
 
 
 # Installation
