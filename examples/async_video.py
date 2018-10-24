@@ -6,22 +6,18 @@ gpCam = GoProCamera.GoPro()
 
 async def run():
     print('Connecting')
-    filename = 'something.MP4'
 
     await gpCam.connect()
 
     print('Setting things up')
     await asyncio.gather(
         gpCam.syncTime(),
-        gpCam.mode(constants.Mode.PhotoMode),
-        gpCam.video_settings("720p", "120"),
+        gpCam.video_settings("720p", "200"),
         gpCam.gpControlSet(constants.Video.PROTUNE_VIDEO, constants.Video.ProTune.ON)
     )
-    print('shoot_vieo', await gpCam.shoot_video(0))
-    await asyncio.sleep(10)
-    await gpCam.shutter(constants.stop)
+    print('shoot_video', await gpCam.shoot_video(5))
     await asyncio.sleep(2)
-    await gpCam.downloadLastMedia(custom_filename=filename)
+    await gpCam.downloadLastMedia()
     print("done")
     await gpCam.quit()
 

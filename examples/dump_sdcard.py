@@ -1,16 +1,15 @@
 from goprocam import GoProCamera
 import asyncio
 import os
-gpCam = GoProCamera.GoPro(working_path='./tmp')
 
-@gpCam.on_log()
-def log_handler(message, **kwargs):
-    print(message)
+
+gpCam = GoProCamera.GoPro(working_path='./tmp')
 
 
 async def run():
     """Downloads all of the SD card's contents and then formats the card.
     """
+    await gpCam.connect()
     await gpCam.downloadAll()
     await gpCam.delete("all")
 

@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import os
+import json
 import posixpath
 from os import path
 try:
@@ -9,21 +10,9 @@ try:
 except ImportError:  # Python 3
     from urllib.parse import urlsplit, unquote
 
+from .errors import HttpError, GoProError, GoProConnectionError
 
-class HttpError(Exception):
-    def __init__(self, status, reason, response=None):
-        self.status = status
-        self.reason = reason
-        self.response = response
-        self.message = "HTTP: {0} - {1}".format(self.status, self.reason)
-
-
-class GoProError(HttpError):
-    def __init__(self, status, reason, response):
-        super().__init__(status, reason, response)
-        self.error_code = response['error_code']
-        self.error_msg = response['error_msg']
-        self.message = "GoPro Error"
+__all__ = ['AsyncClient']
 
 
 class AsyncClient:
@@ -44,12 +33,19 @@ class AsyncClient:
             self._session = None
 
     async def getText(self, url, timeout=30):
-        async with self.session().get(url, timeout=timeout) as resp:
-            if resp.status == 200:
-                return await resp.text()
-
-            message = await resp.json()
-            raise GoProError(resp.status, resp.reason, message)
+        try:
+            async with self.session().get(url, timeout=timeout) as resp:
+                if resp.status == 200:
+                    return await resp.text()
+                message = await resp.text()
+                try:
+                    message = json.loads(message.replace("\r\n", "").replace("\n", ""))
+                    raise GoProError(resp.status, resp.reason, message)
+                except json.JSONDecodeError:
+                    print('error', message)
+                    raise HttpError(resp.status, resp.reason)
+        except aiohttp.client_exceptions.ClientConnectorError as err:
+            raise GoProConnectionError('Can not connect', err)
 
     async def getJSON(self, url, timeout=30):
         async with self.session().get(url, timeout=timeout) as resp:
