@@ -1,4 +1,3 @@
-#
 import time
 import socket
 import urllib.request
@@ -12,14 +11,15 @@ from socket import timeout
 from urllib.error import HTTPError
 from urllib.error import URLError
 import math
-import base64
 import sys
 import ssl
 
 import asyncio
 from goprocam.clients import AsyncClient
-from goprocam.utils import media_size, deprecated, Struct, reconstruct_status, Parsers
-from goprocam.errors import CameraIdentificationError, GoProError, UnsupportedCameraError
+from goprocam.utils import media_size, deprecated, reconstruct_status, Parsers
+from goprocam.errors import CameraIdentificationError, GoProError, UnsupportedCameraError, GoProBusyError
+
+__all__ = ['CameraInfo', 'MediaInfo', 'GoPro']
 
 
 class CameraInfo:
@@ -179,32 +179,23 @@ class GoPro:
         if not value == "":
             value_notempty = str('&p=%' + value)
         # sends parameter and value to /camera/
-        try:
-            resp = await self._client.getText(
-                'http://' + self.ip_addr + '/camera/' + param + '?t=' +
-                self.getPassword() + value_notempty, timeout=5
-            )
-            self._handle_log("sendCamera({0}, {1}) > {2}".format(param, value, resp))
-            return resp
-        except (HTTPError, URLError) as error:
-            print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
-        except timeout:
-            print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
 
-    @deprecated
+        resp = await self._client.getText(
+            'http://' + self.ip_addr + '/camera/' + param + '?t=' +
+            self.getPassword() + value_notempty, timeout=5
+        )
+        self._handle_log("sendCamera({0}, {1}) > {2}".format(param, value, resp))
+        return resp
+
     async def sendBacpac(self, param, value):
         # sends parameter and value to /bacpac/
         value_notempty = ""
         if value:
             value_notempty = str('&p=%' + value)
-        try:
-            await self._client.getText(
-                'http://' + self.ip_addr + '/bacpac/' + param + '?t=' + self.getPassword() +
-                value_notempty, timeout=5)
-        except (HTTPError, URLError) as error:
-            print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
-        except timeout:
-            print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
+
+        await self._client.getText(
+            'http://' + self.ip_addr + '/bacpac/' + param + '?t=' + self.getPassword() +
+            value_notempty, timeout=5)
 
     async def is_apitype(self, apitype):
         return (await self.whichCam()).apitype == apitype
@@ -272,35 +263,7 @@ class GoPro:
                 return ""
                 print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
         else:
-            response = await self._client.getText("http://" + self.ip_addr + "/camera/sx?t=" + self.getPassword(),
-                                                  timeout=5)
-            response_hex = str(bytes.decode(base64.b16encode(response), 'utf-8'))
-            return str(response_hex[param[0]:param[1]])
-
-    async def getStatusRaw(self):
-        if (await self.is_apitype("gpcontrol")):
-            try:
-                return self._client.getText("http://" + self.ip_addr + "/gp/gpControl/status", timeout=5)
-            except (HTTPError, URLError) as error:
-                return ""
-                print("Error code:" + str(error.code) +
-                      "\nMake sure the connection to the WiFi camera is still active.")
-            except timeout:
-                return ""
-                print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-        elif (await self.is_apitype("auth")):
-            try:
-                return await self._client.getText("http://" + self.ip_addr + "/camera/sx?t=" + self.getPassword(),
-                                                  timeout=5)
-            except (HTTPError, URLError) as error:
-                return ""
-                print("Error code:" + str(error.code) +
-                      "\nMake sure the connection to the WiFi camera is still active.")
-            except timeout:
-                return ""
-                print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
-        else:
-            print("Error, camera not defined.")
+            raise UnsupportedCameraError()
 
     async def changeWiFiSettings(self, ssid, password):
         if (await self.is_apitype("gpcontrol")):
@@ -424,14 +387,14 @@ class GoPro:
         else:
             print("Not supported.")
 
-    def power_off(self):
-        if self.whichCam() == "gpcontrol":
-            print(self.gpControlCommand("system/sleep"))
+    async def power_off(self):
+        if (await self.is_apitype("gpcontrol")):
+            return await self.gpControlCommand("system/sleep")
         else:
-            print(self.sendBacpac("PW", "00"))
+            return await self.sendBacpac("PW", "00")
 
-    def power_on(self, _mac_address=""):
-        print("Waking up...")
+    async def power_on(self, _mac_address=""):
+        self._handle_log('Waking up')
         mac_address = _mac_address
         if mac_address is None:
             mac_address = "AA:BB:CC:DD:EE:FF"
@@ -442,7 +405,7 @@ class GoPro:
             elif len(mac_address) == 17:
                 sep = mac_address[2]
                 mac_address = mac_address.replace(sep, '')
-
+        # TODO:see if there is an async version of sock.sendto
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         data = bytes('FFFFFFFFFFFF' + mac_address * 16, 'utf-8')
         message = b''
@@ -454,11 +417,12 @@ class GoPro:
 
     async def pair(self, usepin=True):
         raise NotImplementedError('pairing is not implemented')
-        # This is a pairing procedure needed for HERO4 and HERO5 cameras.
-        # When those type GoPro camera are purchased the GoPro Mobile app needs an
-        # authentication code when pairing the camera to a mobile device for the first time.
-        # The code is useless afterwards. This function will pair your GoPro to the machine
-        # without the need of using the mobile app -- at all.
+        """This is a pairing procedure needed for HERO4 and HERO5 cameras.
+        When those type GoPro camera are purchased the GoPro Mobile app needs an
+        authentication code when pairing the camera to a mobile device for the first time.
+        The code is useless afterwards. This function will pair your GoPro to the machine
+        without the need of using the mobile app -- at all.
+        """
         if usepin is False:
             paired_resp = ""
             while "{}" not in paired_resp:
@@ -593,123 +557,78 @@ class GoPro:
             await self.gpControlCommand("digital_zoom?range_pcnt=" + zoomLevel)
 
     async def getMedia(self):
-        """Return url for media
+        """Return url for last media
         """
         if "FS" in (await self.infoCamera(constants.Camera.Firmware)):
             await self.getMediaFusion()
         else:
-            folder = ""
-            file_lo = ""
-            try:
-                json_parse = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList')
-                for i in json_parse['media']:
-                    folder = i['d']
-                for i in json_parse['media']:
-                    for i2 in i['fs']:
-                        file_lo = i2['n']
-                return "http://" + self.ip_addr + ":8080/videos/DCIM/" + folder + "/" + file_lo
-            except (HTTPError, URLError) as error:
-                return ""
-                print("Error code:" + str(error.code) +
-                      "\nMake sure the connection to the WiFi camera is still active.")
-            except timeout:
-                return ""
-                print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
+            fil = await self.getMediaInfo()
+            return "http://" + self.ip_addr + ":8080/videos/DCIM/" + fil.folder + "/" + fil.name
 
-    def getMediaFusion(self):
+    async def getMediaFusion(self):
         folder_1 = ""
         folder_2 = ""
         file_1 = ""
         file_2 = ""
-        try:
-            raw_data = urllib.request.urlopen('http://' + self.ip_addr + ':8080/gp/gpMediaListEx').read().decode('utf-8')
-            json_parse = json.loads(raw_data)
-            for i in json_parse[0]['media']:
-                folder_1 = i['d']
-                if "GBACK" in i['d']:
-                    folder_2 = i['d'].replace("GBACK", "GFRNT")
-                else:
-                    folder_2 = i['d'].replace("GFRNT", "GBACK")
-            for mediaitem in json_parse[0]['media']:
-                if mediaitem["d"] == folder_1:
-                    for mediaitem2 in mediaitem["fs"]:
-                        file_1 = mediaitem2["n"]
-            for mediaitem in json_parse[1]['media']:
-                if mediaitem["d"] == folder_2:
-                    for mediaitem2 in mediaitem["fs"]:
-                        file_2 = mediaitem2["n"]
 
-            return [
-                "http://" + self.ip_addr + ":8080/videos/DCIM/" + folder_1 + "/" + file_1,
-                "http://" + self.ip_addr + ":8080/videos2/DCIM/" + folder_2 + "/" + file_2]
-        except (HTTPError, URLError) as error:
-            return ""
-            print("Error code:" + str(error.code) + "\nMake sure the connection to the WiFi camera is still active.")
-        except timeout:
-            return ""
-            print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
+        json_parse = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaListEx')
+
+        for i in json_parse[0]['media']:
+            folder_1 = i['d']
+            if "GBACK" in i['d']:
+                folder_2 = i['d'].replace("GBACK", "GFRNT")
+            else:
+                folder_2 = i['d'].replace("GFRNT", "GBACK")
+        for mediaitem in json_parse[0]['media']:
+            if mediaitem["d"] == folder_1:
+                for mediaitem2 in mediaitem["fs"]:
+                    file_1 = mediaitem2["n"]
+        for mediaitem in json_parse[1]['media']:
+            if mediaitem["d"] == folder_2:
+                for mediaitem2 in mediaitem["fs"]:
+                    file_2 = mediaitem2["n"]
+
+        return [
+            "http://" + self.ip_addr + ":8080/videos/DCIM/" + folder_1 + "/" + file_1,
+            "http://" + self.ip_addr + ":8080/videos2/DCIM/" + folder_2 + "/" + file_2]
 
     async def getMediaInfo(self, option=None):
         """Return MediaInfo about last record in MediaList
         """
-        folder = ""
-        file = ""
-        size = "0"
-        json_parse = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList')
+        media = await self.listMedia()
 
-        if "FS" in (await self.infoCamera(constants.Camera.Firmware)):
-            json_parse = json_parse[0]
-        for i in json_parse['media']:
-            folder = i['d']
-        for i in json_parse['media']:
-            for i2 in i['fs']:
-                file = i2['n']
-                size = i2['s']
-        if option == 'file':
-            return file
-        elif option == 'folder':
-            return folder
-        elif option == 'size':
-            return size
+        if len(media) > 0:
+            return media[0]
+        return None
 
-        return MediaInfo(file, folder, int(size))
-
-    async def listMedia(self, format=True, media_array=True):
-        """Returns a list of media records
-        If format is False you get the raw parsed JSON.
-        If media_array is True you will get an array MediaInfo
-        If media_array is False you will get a comma separated string of filenames
+    async def listMedia(self, format=True):
+        """Returns a list of media records as instance of MediaInfo
+        If ``format`` is False you get the raw parsed JSON.
         """
-        parsed_resp = await self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList')
+
+        [parsed_resp, firmware] = await asyncio.gather(
+            self._client.getJSON('http://' + self.ip_addr + ':8080/gp/gpMediaList'),
+            self.infoCamera(constants.Camera.Firmware))
+
         if not parsed_resp:
             return []
 
         if format is False:
+            # return raw parsed json
             return parsed_resp
 
-        if media_array is True:
-            media = []
-            if "FS" in await self.infoCamera(constants.Camera.Firmware):
-                medialength = len(parsed_resp)
-                for i in range(medialength):
-                    for folder in parsed_resp[i]['media']:
-                        for item in folder['fs']:
-                            media.append(MediaInfo(folder['d'], item['n'], item['s']))
-            else:
-                for i in parsed_resp['media']:
-                    for i2 in i['fs']:
-                        media.append(MediaInfo(i['d'], i2['n'], i2['s']))
-            return media
-        else:
+        media = []
+        if "FS" in firmware:
             medialength = len(parsed_resp)
-            msg = ''
             for i in range(medialength):
                 for folder in parsed_resp[i]['media']:
                     for item in folder['fs']:
-                        if len(msg) > 0:
-                            msg += ', '
-                        msg += item['n']
-            return msg
+                        media.append(MediaInfo(folder['d'], item['n'], int(item['s'])))
+        else:
+            for i in parsed_resp['media']:
+                for i2 in i['fs']:
+                    media.append(MediaInfo(i['d'], i2['n'], int(i2['s'])))
+        return media
 
     #
     # Misc media utils
@@ -770,6 +689,10 @@ class GoPro:
                 self.downloadMedia(folder, f)
 
     async def downloadLastMedia(self, path="", custom_filename=""):
+        """Downloads media, whatever type
+        ``path`` is the file to download
+        ``custome_filename`` is the alternate filename it will get localy
+        """
         if (await self.IsBusy()) == 0:
             if path == "":
                 media = await self.getMediaInfo()
@@ -794,7 +717,7 @@ class GoPro:
                     filename = custom_filename
                 await self._client.download(path, filename)
         else:
-            print("Not supported while recording or processing media.")
+            raise GoProBusyError()
 
     async def downloadMedia(self, media, custom_filename=""):
         if not isinstance(media, MediaInfo):

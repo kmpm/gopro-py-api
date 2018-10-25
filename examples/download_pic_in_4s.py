@@ -13,9 +13,4 @@ async def run():
     await gpCam.quit()
 
 
-@gpCam.on_log()
-def log_handler(message, *kwargs):
-    print("log", message, kwargs)
-
-
 asyncio.get_event_loop().run_until_complete(run())
