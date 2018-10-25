@@ -1,5 +1,6 @@
-from goprocam import GoProCamera, constants
 import asyncio
+import datetime
+from goprocam import GoProCamera, constants
 
 gpCam = GoProCamera.GoPro()
 
@@ -15,7 +16,7 @@ async def run():
         gpCam.video_settings("720p", "200"),
         gpCam.gpControlSet(constants.Video.PROTUNE_VIDEO, constants.Video.ProTune.ON)
     )
-    print('shoot_video', await gpCam.shoot_video(5))
+    print('shoot_video=', await gpCam.shoot_video(5))
     await asyncio.sleep(2)
     await gpCam.downloadLastMedia()
     print("done")
@@ -29,7 +30,7 @@ def handle_connect(camera):
 
 @gpCam.on_log()
 def handle_log(message, **kwargs):
-    print("log", message, kwargs)
+    print("{0}\t{1}".format(datetime.datetime.now(), message), kwargs.keys())
 
 
 asyncio.get_event_loop().run_until_complete(run())
