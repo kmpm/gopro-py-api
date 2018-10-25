@@ -649,7 +649,7 @@ class GoPro:
             return ""
             print("HTTP Timeout\nMake sure the connection to the WiFi camera is still active.")
 
-    async def getMediaInfo(self, option):
+    async def getMediaInfo(self, option=None):
         """Return MediaInfo about last record in MediaList
         """
         folder = ""
@@ -665,6 +665,12 @@ class GoPro:
             for i2 in i['fs']:
                 file = i2['n']
                 size = i2['s']
+        if option == 'file':
+            return file
+        elif option == 'folder':
+            return folder
+        elif option == 'size':
+            return size
 
         return MediaInfo(file, folder, int(size))
 
