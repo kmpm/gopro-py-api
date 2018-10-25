@@ -217,6 +217,8 @@ class GoPro:
         if self._camera:
             return self._camera
         else:
+            found = False
+            jsondata = {}
             try:
                 jsondata = await self._client.getJSON('http://' + self.ip_addr + '/gp/gpControl', timeout=5)
                 response = jsondata["info"]["firmware_version"]
@@ -242,13 +244,16 @@ class GoPro:
                     await self.prepare_gpcontrol()
                     self._camera = CameraInfo(jsondata["info"]["model_name"], model_type, apitype,
                                               info=jsondata["info"])
-                    self._handle_log("detected camera ".format(self._camera.model), camera=self._camera)
+                    found = True
                 else:
                     raise CameraIdentificationError('Unsupported camera:' + response, 400)
 
-                return self._camera
             except Exception as err:
                 raise CameraIdentificationError('Error identifying camera or no camera connected', 500, err)
+
+            if found:
+                self._handle_log("detected camera ".format(self._camera.model), camera=self._camera, data=jsondata)
+                return self._camera
 
     async def getStatus(self, param=None, value=None):
         if (await self.is_apitype("gpcontrol")):
@@ -1230,4 +1235,7 @@ class GoPro:
 
     def _handle_log(self, message, **kwargs):
         if self._log_handler is not None:
-            self._log_handler(message, **kwargs)
+            try:
+                self._log_handler(message, **kwargs)
+            except Exception:
+                raise

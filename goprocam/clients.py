@@ -35,15 +35,19 @@ class AsyncClient:
     async def getText(self, url, timeout=30):
         try:
             async with self.session().get(url, timeout=timeout) as resp:
+                message = await resp.text(encoding='utf-8')
                 if resp.status == 200:
-                    return await resp.text()
-                message = await resp.text()
-                try:
+                    return message
+
+                # try to parse json response
+                print('content_type', resp.content_type)
+                if 'json' in resp.content_type:
                     message = json.loads(message.replace("\r\n", "").replace("\n", ""))
-                    raise GoProError(resp.status, resp.reason, message)
-                except json.JSONDecodeError:
-                    print('error', message)
-                    raise HttpError(resp.status, resp.reason)
+                    raise GoProError(url, resp.status, resp.reason, message)
+
+        except json.JSONDecodeError:
+            print('error', message)
+            raise HttpError(url, resp.status, resp.reason)
         except aiohttp.client_exceptions.ClientConnectorError as err:
             raise GoProConnectionError('Can not connect', err)
 
